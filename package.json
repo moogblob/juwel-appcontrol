@@ -1,0 +1,23 @@
+{
+  "name": "juwel-appcontrol-node",
+  "version": "0.1.0",
+  "description": "Minimal TypeScript client for the MyJUWEL / qconnex cloud API used by JUWEL AppControl devices",
+  "type": "module",
+  "main": "src/client.ts",
+  "bin": {
+    "juwel": "bin/juwel.ts"
+  },
+  "scripts": {
+    "connect": "node bin/juwel.ts connect",
+    "devices": "node bin/juwel.ts devices",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "^5.9"
+  },
+  "license": "MIT"
+}
