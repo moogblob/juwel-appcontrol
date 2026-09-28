@@ -6,7 +6,8 @@
  *   node bin/juwel.ts devices
  *   node bin/juwel.ts state <cloudDeviceId>
  *   node bin/juwel.ts presets | feeder | config <productId>
- *   node bin/juwel.ts on <cloudDeviceId> [--brightness 80] [--rgb 255,200,100] [--white 128]
+ *   node bin/juwel.ts on <cloudDeviceId> [--brightness 80] [--rgb 100,80,40] [--white 50]
+ *                                        [--red 100] [--green 80] [--blue 40]   # all values 0..100
  *   node bin/juwel.ts off <cloudDeviceId>
  *   node bin/juwel.ts auto <cloudDeviceId>      # back to the schedule
  *
@@ -16,7 +17,7 @@
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { JuwelCloud, JuwelAuthError } from "../src/client.ts";
+import { JuwelCloud, JuwelAuthError, type ChannelValues } from "../src/client.ts";
 
 function loadDotEnv(): void {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -59,19 +60,24 @@ function parseArgs(args: string[]): { positional: string[]; flags: Record<string
   return { positional, flags };
 }
 
-function parseRgb(text: string): { red: number; green: number; blue: number } {
-  const parts = text.split(",").map((n) => Number(n.trim()));
-  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) {
-    throw new Error(`--rgb expects "r,g,b" with values 0..255, got "${text}"`);
-  }
-  const [red, green, blue] = parts as [number, number, number];
-  return { red, green, blue };
+function requirePct(text: string, flag: string): number {
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error(`--${flag} expects a percentage 0..100, got "${text}"`);
+  return n;
 }
 
-function requireNumber(text: string, flag: string): number {
-  const n = Number(text);
-  if (!Number.isFinite(n)) throw new Error(`--${flag} expects a number, got "${text}"`);
-  return n;
+/** Channel levels from --rgb r,g,b and/or --red/--green/--blue/--white, all 0..100. */
+function parseChannels(flags: Record<string, string>): Partial<ChannelValues> | undefined {
+  const ch: Partial<ChannelValues> = {};
+  if (flags.rgb !== undefined) {
+    const parts = flags.rgb.split(",");
+    if (parts.length !== 3) throw new Error(`--rgb expects "r,g,b" with values 0..100, got "${flags.rgb}"`);
+    [ch.red, ch.green, ch.blue] = parts.map((t) => requirePct(t.trim(), "rgb")) as [number, number, number];
+  }
+  for (const name of ["red", "green", "blue", "white"] as const) {
+    if (flags[name] !== undefined) ch[name] = requirePct(flags[name], name);
+  }
+  return Object.keys(ch).length > 0 ? ch : undefined;
 }
 
 async function main(): Promise<void> {
@@ -116,11 +122,14 @@ async function main(): Promise<void> {
     }
     case "on": {
       const [id] = args;
-      if (!id) throw new Error("usage: juwel on <cloudDeviceId> [--brightness 0-100] [--rgb r,g,b] [--white 0-255]");
+      if (!id) {
+        throw new Error(
+          "usage: juwel on <cloudDeviceId> [--brightness 0-100] [--rgb r,g,b] [--red|--green|--blue|--white 0-100]",
+        );
+      }
       await cloud.turnOn(id, {
-        brightnessPct: flags.brightness !== undefined ? requireNumber(flags.brightness, "brightness") : undefined,
-        rgb: flags.rgb !== undefined ? parseRgb(flags.rgb) : undefined,
-        white: flags.white !== undefined ? requireNumber(flags.white, "white") : undefined,
+        brightness: flags.brightness !== undefined ? requirePct(flags.brightness, "brightness") : undefined,
+        channels: parseChannels(flags),
       });
       console.log("Light on (schedule paused for 1 h if it was running)");
       break;

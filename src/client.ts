@@ -9,9 +9,11 @@
  */
 
 import type {
+  ChannelValues,
   CommandBody,
   DeviceState,
   FeederPreset,
+  HeliaLuxState,
   JuwelCloudOptions,
   ManualLightOptions,
   Preset,
@@ -38,6 +40,33 @@ type HttpMethod = "GET" | "POST";
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
+}
+
+/** Percent (0..100) -> the cloud's 0..255 channel scale. */
+function pctToByte(pct: number): number {
+  return Math.round((clamp(pct, 0, 100) / 100) * 255);
+}
+
+/** The cloud's 0..255 channel scale -> percent (0..100). */
+function byteToPct(byte: number): number {
+  return Math.round((clamp(byte, 0, 255) / 255) * 100);
+}
+
+/**
+ * Channel levels of a reported state in percent (0..100), the same scale as
+ * Preset timeEvents and ManualLightOptions. Channels the state does not
+ * report are omitted. Note that in "auto" mode these are the last manual
+ * values, not the live curve; see HeliaLuxState.
+ */
+export function channelLevels(state: HeliaLuxState): Partial<ChannelValues> {
+  const out: Partial<ChannelValues> = {};
+  if (state.color) {
+    out.red = byteToPct(state.color.red);
+    out.green = byteToPct(state.color.green);
+    out.blue = byteToPct(state.color.blue);
+  }
+  if (state.white) out.white = byteToPct(state.white.value);
+  return out;
 }
 
 export class JuwelCloud {
@@ -169,40 +198,45 @@ export class JuwelCloud {
   // ---- light convenience -------------------------------------------
 
   /**
-   * Set manual light values. While the schedule runs (mode "auto") the lamp
-   * ignores manual writes, so the schedule is paused first (preview mode,
-   * default 1 h), exactly as the app does. Pass `currentMode` if you already
-   * have a fresh state to save a round trip; otherwise it is fetched. When the
-   * mode is unknown (e.g. the cloud reports the device offline and returns no
-   * trait values) the schedule is paused anyway: pausing twice is harmless,
-   * a swallowed manual command is not.
+   * Set manual light values, all in percent (0..100). While the schedule
+   * runs (mode "auto") the lamp ignores manual writes, so the schedule is
+   * paused first (preview mode, default 1 h), exactly as the app does.
+   *
+   * Pass `current` if you already have a fresh state to save a round trip;
+   * otherwise it is fetched. The state is also used to complete a partial
+   * red/green/blue update, since the cloud writes those three as one object.
+   * When the mode is unknown (e.g. the cloud reports the device offline and
+   * returns no trait values) the schedule is paused anyway: pausing twice is
+   * harmless, a swallowed manual command is not.
    */
-  async setManual(
-    cloudDeviceId: string,
-    options: ManualLightOptions,
-    currentMode?: string,
-  ): Promise<void> {
-    const mode = currentMode ?? (await this.getState(cloudDeviceId)).mode;
-    if (mode === undefined || mode === "auto") await this.pauseSchedule(cloudDeviceId);
+  async setManual(cloudDeviceId: string, options: ManualLightOptions, current?: DeviceState): Promise<void> {
+    const state = current ?? (await this.getState(cloudDeviceId));
+    if (state.mode === undefined || state.mode === "auto") await this.pauseSchedule(cloudDeviceId);
 
     const fields: StatePayload = {};
     if (options.status !== undefined) fields.status = options.status;
-    if (options.brightnessPct !== undefined) {
-      fields.brightness = { percentage: clamp(Math.round(options.brightnessPct), 0, 100) };
+    if (options.brightness !== undefined) {
+      fields.brightness = { percentage: Math.round(clamp(options.brightness, 0, 100)) };
     }
-    if (options.rgb !== undefined) {
-      fields.color = {
-        red: clamp(Math.round(options.rgb.red), 0, 255),
-        green: clamp(Math.round(options.rgb.green), 0, 255),
-        blue: clamp(Math.round(options.rgb.blue), 0, 255),
+
+    const ch = options.channels ?? {};
+    if (ch.red !== undefined || ch.green !== undefined || ch.blue !== undefined) {
+      const now = channelLevels(state);
+      const pick = (name: "red" | "green" | "blue"): number => {
+        const v = ch[name] ?? now[name];
+        if (v === undefined) {
+          throw new JuwelApiError(`channels.${name} not given and device state has no colour to fall back on`);
+        }
+        return v;
       };
+      fields.color = { red: pctToByte(pick("red")), green: pctToByte(pick("green")), blue: pctToByte(pick("blue")) };
     }
-    if (options.white !== undefined) fields.white = { value: clamp(Math.round(options.white), 0, 255) };
+    if (ch.white !== undefined) fields.white = { value: pctToByte(ch.white) };
 
     if (Object.keys(fields).length > 0) await this.setState(cloudDeviceId, fields);
   }
 
-  /** Turn the light on, optionally with brightness / colour. Pauses the schedule if needed. */
+  /** Turn the light on, optionally with brightness / channels in percent. Pauses the schedule if needed. */
   turnOn(cloudDeviceId: string, options: Omit<ManualLightOptions, "status"> = {}): Promise<void> {
     return this.setManual(cloudDeviceId, { ...options, status: "on" });
   }

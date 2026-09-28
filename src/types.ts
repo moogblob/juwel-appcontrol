@@ -263,15 +263,21 @@ export interface HeliaLuxState {
   type?: "status" | string;
 }
 
-/** Manual light values. Omitted fields are left unchanged on the device. */
+/**
+ * Manual light values, all in percent (0..100) like the Preset timeEvents.
+ * Omitted fields are left unchanged on the device. The client converts to
+ * the cloud's wire scales (colour and white 0..255) internally.
+ */
 export interface ManualLightOptions {
   status?: "on" | "off";
-  /** 0..100 */
-  brightnessPct?: number;
-  /** 0..255 each */
-  rgb?: { red: number; green: number; blue: number };
-  /** 0..255 */
-  white?: number;
+  /** Master dimmer over all four channels, 0..100. */
+  brightness?: number;
+  /**
+   * Per-channel levels, 0..100 each. The cloud writes red/green/blue as one
+   * object, so a partial red/green/blue update is completed from the current
+   * device state before sending.
+   */
+  channels?: Partial<ChannelValues>;
 }
 
 /**

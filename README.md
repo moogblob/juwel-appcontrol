@@ -29,7 +29,8 @@ node bin/juwel.ts presets           # lighting profiles
 node bin/juwel.ts feeder            # feeding plans (SmartFeed)
 node bin/juwel.ts config <productId> # trait catalogue, e.g. @juwel.lighting.helialux1
 
-node bin/juwel.ts on <deviceId> --brightness 80 --rgb 255,200,100 --white 128
+node bin/juwel.ts on <deviceId> --brightness 80 --rgb 100,80,40 --white 50   # all 0..100
+node bin/juwel.ts on <deviceId> --blue 20          # change one channel, keep the rest
 node bin/juwel.ts off <deviceId>
 node bin/juwel.ts auto <deviceId>   # resume the automatic schedule
 ```
@@ -44,7 +45,8 @@ await cloud.login();
 const settings = await cloud.getSettings();
 
 const id = settings.devices[0].cloudDeviceId;
-await cloud.turnOn(id, { brightnessPct: 80 });  // pauses the schedule if it is running
+await cloud.turnOn(id, { brightness: 80, channels: { red: 100, green: 80, blue: 40, white: 50 } });
+await cloud.setManual(id, { channels: { blue: 20 } });  // other channels unchanged
 await cloud.turnOff(id);
 await cloud.resumeSchedule(id);                 // back to automatic mode
 ```
@@ -52,3 +54,8 @@ await cloud.resumeSchedule(id);                 // back to automatic mode
 While the schedule runs the lamp ignores manual commands, exactly like the app. `turnOn`,
 `turnOff` and `setManual` therefore pause the schedule first (preview mode, 1 hour).
 Use `resumeSchedule` or `juwel auto` to return to the stored daily cycle.
+
+All light values in the library and CLI are percentages (0..100): the master `brightness` and
+the four channels `red`, `green`, `blue`, `white`. This matches the scale the lighting profiles
+(`Preset.timeEvents`) use. The cloud itself stores colour and white as 0..255; the client converts
+on the way out, and `channelLevels(state)` converts a reported state back to percent.
