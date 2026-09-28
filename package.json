@@ -3,11 +3,25 @@
   "version": "0.1.0",
   "description": "Minimal TypeScript client for the MyJUWEL / qconnex cloud API used by JUWEL AppControl devices",
   "type": "module",
-  "main": "src/client.ts",
+  "main": "dist/client.js",
+  "types": "dist/client.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "bin"
+  ],
   "bin": {
     "juwel": "bin/juwel.ts"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
     "connect": "node bin/juwel.ts connect",
     "devices": "node bin/juwel.ts devices",
     "typecheck": "tsc --noEmit"
