@@ -123,7 +123,8 @@ export interface Device extends DeviceRef {
   createdAt: number;
   updatedAt: number;
   syncedWith: unknown[];
-  previewConfig: { duration: number };
+  /** Preview (manual) mode: duration in ms, and the epoch-ms end time while a pause is active. */
+  previewConfig: { duration: number; runningUntil?: number };
   manufacturerId: string;
   presetSlotInfo: PresetSlotInfo[];
   firmwareVersion: string;
@@ -214,18 +215,63 @@ export interface ProductConfig {
 }
 
 /**
- * HeliaLux state fields, derived from the trait catalogue. Field names are
- * the traits' msg_key values. Colour and white use 0..255, brightness 0..100.
- * Note: the upstream Python integration writes brightness as
- * { percentage: n } even though the catalogue says { brightness: n }.
+ * HeliaLux state as reported by GET /device/{id}/state while connected.
+ * Observed on firmware V2.0.1.3. Only 6 of these fields are declared in the
+ * product catalogue (status, brightness, color, white, mode, connectivity);
+ * the rest are undocumented device fields. Colour and white use 0..255,
+ * brightness 0..100.
  */
 export interface HeliaLuxState {
   status?: "on" | "off";
-  brightness?: { brightness?: number; percentage?: number };
+  /**
+   * NOTE: in "auto" mode the device does not report live values. brightness,
+   * color and white stay frozen at the last manual value while the lamp
+   * follows the profile curve; compute the current value from the active
+   * Preset's timeEvents instead. Verified on hardware 2026-09-28.
+   */
+  brightness?: { percentage: number };
   color?: { red: number; green: number; blue: number };
   white?: { value: number };
-  mode?: "rgb";
+  /** "auto" while the schedule runs, "rgb" during a manual override (preview). */
+  mode?: "auto" | "rgb";
   connectivity?: { value: "OK" | "UNREACHABLE" };
+
+  // --- undocumented device fields ---------------------------------------
+  /** Slot index of the running profile, see Device.presetSlotInfo. */
+  active_preset?: number;
+  /** 65535 when idle. */
+  active_command?: number;
+  active_scene?: string;
+  fade?: { in: number; out: number };
+  fwversion?: string;
+  sdkversion?: string;
+  /** Unix epoch seconds of the device's last report. */
+  last_update?: number;
+  open_slots?: number;
+  power_on?: number;
+  preset_count?: number;
+  /** Slot index per weekday, index 0 = Sunday .. 6 = Saturday. */
+  preset_id_by_weekday?: number[];
+  /** Profiles stored on the device. `name` is the cloud preset id. */
+  presets?: { id: number; name: string; datapoints: number }[];
+  /** True while a manual override (pause) is active. */
+  preview?: boolean;
+  reset_reason?: number;
+  service?: boolean;
+  /** Seconds left of the manual override; 0 when the schedule runs. */
+  timeout?: number;
+  type?: "status" | string;
+}
+
+/** Manual light values. Omitted fields are left unchanged on the device. */
+export interface ManualLightOptions {
+  status?: "on" | "off";
+  /** 0..100 */
+  brightnessPct?: number;
+  /** 0..255 each */
+  rgb?: { red: number; green: number; blue: number };
+  /** 0..255 */
+  white?: number;
 }
 
 /**
